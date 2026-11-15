@@ -1,3 +1,4 @@
+export { FeedbackStore } from './feedback-store.js';
 const STATES = ['Inbox', 'Planned', 'In Progress', 'Done', 'Not Planned'];
 const encoder = new TextEncoder();
 const headers = {'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer'};
@@ -45,20 +46,22 @@ function sameOrigin(request) {
   const origin=request.headers.get('origin');
   return !!origin && origin===new URL(request.url).origin;
 }
-async function checkThrottle(env,key,prefix) {
-  const now=Date.now();
-  const hashed=hex(await bytes((env.SESSION_SECRET||'')+':'+prefix+':'+key));
-  // Atomic conditional upsert: blocked attempts do not increase the counter.
-  const result=await env.DB.prepare(`INSERT INTO rate_limits (key,count,next_allowed,window_start)
-    VALUES (?,1,?+2000,?)
-    ON CONFLICT(key) DO UPDATE SET
-      count=CASE WHEN ?-window_start > 86400000 THEN 1 ELSE MIN(count+1,16) END,
-      next_allowed=? + CASE WHEN ?-window_start > 86400000 THEN 2000 ELSE MIN(3600000, 1000 * (1 << MIN(count+1,12))) END,
-      window_start=CASE WHEN ?-window_start > 86400000 THEN ? ELSE window_start END
-    WHERE next_allowed <= ?
-    RETURNING count,next_allowed`).bind(hashed,now,now,now,now,now,now,now,now).first();
-  if(!result)return false;
-  return true;
+function storage(env) {
+  return env.FEEDBACK_STORE.get(env.FEEDBACK_STORE.idFromName('global'));
+}
+async function store(env, route, data) {
+  const response = await storage(env).fetch('https://feedback-store.internal/' + route, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'Feedback storage unavailable');
+  return result;
+}
+async function checkThrottle(env, key, prefix) {
+  const hashed = hex(await bytes((env.SESSION_SECRET || '') + ':' + prefix + ':' + key));
+  return store(env, 'throttle', {key:hashed, now:Date.now()});
 }
 function ip(request) { return request.headers.get('cf-connecting-ip') || 'unknown'; }
 async function api(request,env,url) {
@@ -66,12 +69,11 @@ async function api(request,env,url) {
   const origin=trustedOrigin(request.headers.get('origin'),request.url);
   const ch=cors(origin);
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers:ch});
-  if(!env.DB)return err('Database not configured',503,ch);
+  if(!env.FEEDBACK_STORE)return err('Feedback store not configured',503,ch);
   if(path==='/api/feedback' && request.method==='GET') {
     const isAdmin=await admin(request,env);
-    const sql=isAdmin ? 'SELECT id,message,email,site,status,created_at,updated_at FROM feedback ORDER BY created_at DESC LIMIT 500' : 'SELECT id,message,site,status,created_at,updated_at FROM feedback ORDER BY created_at DESC LIMIT 500';
-    const rows=await env.DB.prepare(sql).all();
-    return json({items:rows.results||[],admin:isAdmin},200,ch);
+    const rows=await store(env,'list',{admin:isAdmin});
+    return json({items:rows.items,admin:isAdmin},200,ch);
   }
   if(path==='/api/feedback' && request.method==='POST') {
     if(!origin)return err('Submissions are only accepted from Shaurya websites',403,ch);
@@ -84,18 +86,18 @@ async function api(request,env,url) {
     const message=String(body.message||'').trim(), email=String(body.email||'').trim();
     if(message.length<3||message.length>2000)return err('Message must be 3–2000 characters',400,ch);
     if(email.length>254||!/^[-.!#$%&'*+/=?^_`{|}~\w]+@[-\w]+(?:\.[-\w]+)+$/.test(email))return err('Enter a valid email',400,ch);
-    const allowed=await checkThrottle(env,ip(request)+':'+origin,'feedback');
-    if(!allowed)return err('Please wait before sending another suggestion',429,{...ch,'retry-after':'30'});
+    const throttle=await checkThrottle(env,ip(request)+':'+origin,'feedback');
+    if(!throttle.allowed)return err('Please wait before sending another suggestion',429,{...ch,'retry-after':String(throttle.retryAfter)});
     const id=crypto.randomUUID(), now=new Date().toISOString(),site=new URL(origin).hostname;
-    await env.DB.prepare('INSERT INTO feedback(id,message,email,site,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').bind(id,message,email,site,'Inbox',now,now).run();
+    await store(env,'submit',{id,message,email,site,now});
     return json({ok:true,id},201,ch);
   }
   if(path==='/api/admin/login' && request.method==='POST') {
     if(!sameOrigin(request))return err('Forbidden',403);
     if(!env.ADMIN_PASSCODE||!env.SESSION_SECRET)return err('Admin secrets not configured',503);
     if(!(request.headers.get('content-type')||'').startsWith('application/json'))return err('Expected JSON',415);
-    const allowed=await checkThrottle(env,ip(request),'login');
-    if(!allowed)return err('Too many attempts. Try later.',429,{'retry-after':'30'});
+    const throttle=await checkThrottle(env,ip(request),'login');
+    if(!throttle.allowed)return err('Too many attempts. Try later.',429,{'retry-after':String(throttle.retryAfter)});
     let body;try{body=await request.json();}catch{return err('Invalid JSON');}
     const proposed=typeof body?.passcode==='string'?body.passcode:'';
     if(proposed.length>1024)return err('Invalid passcode',401);
@@ -115,8 +117,11 @@ async function api(request,env,url) {
     if(!(request.headers.get('content-type')||'').startsWith('application/json'))return err('Expected JSON',415);
     let body;try{body=await request.json();}catch{return err('Invalid JSON');}
     if(!STATES.includes(body?.status))return err('Invalid status');
-    const result=await env.DB.prepare('UPDATE feedback SET status=?,updated_at=? WHERE id=?').bind(body.status,new Date().toISOString(),match[1]).run();
-    return result.meta.changes ? json({ok:true}) : err('Not found',404);
+    const response = await storage(env).fetch('https://feedback-store.internal/update', {
+      method:'POST', headers:{'content-type':'application/json'},
+      body:JSON.stringify({id:match[1],status:body.status,now:new Date().toISOString()})
+    });
+    return json(await response.json(),response.status);
   }
   return err('Not found',404,ch);
 }
