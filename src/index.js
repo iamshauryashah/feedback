@@ -16,6 +16,7 @@ function trustedOrigin(value, requestUrl) {
     const page = new URL(requestUrl);
     if(!['https:','http:'].includes(origin.protocol) || origin.username || origin.password || origin.pathname!=='/' || origin.search || origin.hash) return null;
     if(!hostAllowed(origin.hostname))return null;
+    if(['localhost','127.0.0.1'].includes(origin.hostname) && !['localhost','127.0.0.1'].includes(page.hostname))return null;
     if(origin.protocol!=='https:' && !['localhost','127.0.0.1'].includes(origin.hostname))return null;
     return origin.origin;
   } catch { return null; }
