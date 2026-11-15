@@ -55,7 +55,7 @@ async function checkThrottle(env,key,prefix) {
       next_allowed=? + CASE WHEN ?-window_start > 86400000 THEN 2000 ELSE MIN(3600000, 1000 * (1 << MIN(count+1,12))) END,
       window_start=CASE WHEN ?-window_start > 86400000 THEN ? ELSE window_start END
     WHERE next_allowed <= ?
-    RETURNING count,next_allowed`).bind(hashed,now,now,now,now,now,now,now,now,now).first();
+    RETURNING count,next_allowed`).bind(hashed,now,now,now,now,now,now,now,now).first();
   if(!result)return false;
   return true;
 }
