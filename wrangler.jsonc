@@ -11,18 +11,26 @@
       "/api/*"
     ]
   },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "feedback-db",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
-      "migrations_dir": "migrations"
-    }
-  ],
   "routes": [
     {
       "pattern": "feedback.shauryaswebsites.com",
       "custom_domain": true
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "FEEDBACK_STORE",
+        "class_name": "FeedbackStore"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "FeedbackStore"
+      ]
     }
   ]
 }
