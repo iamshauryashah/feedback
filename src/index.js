@@ -9,7 +9,8 @@ const hex = bytes => Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join(''
 const safeEq = (a,b) => { if(a.length!==b.length)return false; let diff=0; for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0; };
 const b64 = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 const unb64 = value => Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-value.length%4)%4)),c=>c.charCodeAt(0));
-const hostAllowed = host => host === 'shauryaswebsites.com' || host.endsWith('.shauryaswebsites.com') || host === 'localhost' || host === '127.0.0.1';
+const TRUSTED_DOMAINS = ['shauryaswebsites.com', 'shauryaswebsite.com'];
+const hostAllowed = host => TRUSTED_DOMAINS.some(domain => host === domain || host.endsWith('.' + domain)) || host === 'localhost' || host === '127.0.0.1';
 function trustedOrigin(value, requestUrl) {
   if(!value) return null;
   try {
@@ -68,7 +69,7 @@ async function api(request,env,url) {
   const path=url.pathname;
   const origin=trustedOrigin(request.headers.get('origin'),request.url);
   const ch=cors(origin);
-  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:ch});
+  if(request.method==='OPTIONS')return origin ? new Response(null,{status:204,headers:ch}) : err('Origin not allowed',403);
   if(!env.FEEDBACK_STORE)return err('Feedback store not configured',503,ch);
   if(path==='/api/feedback' && request.method==='GET') {
     const isAdmin=await admin(request,env);
