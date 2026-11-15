@@ -1,4 +1,6 @@
 const STATES=['Inbox','Planned','In Progress','Done','Not Planned'];
+const STATUS_LABELS={'Inbox':'New Feedback','Planned':'Backlog','Done':'Available in Production','Not Planned':'Will Not Do'};
+const statusLabel=status=>STATUS_LABELS[status]||status;
 const $=id=>document.getElementById(id);
 let isAdmin=false;
 const make=(tag,className,text)=>{const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=text;return el;};
@@ -23,7 +25,7 @@ async function load(){
   $('count').textContent=data.items.length+' idea'+(data.items.length===1?'':'s')+' shared';
   const board=$('board');board.replaceChildren();
   STATES.forEach((state,index)=>{
-   const col=make('section','column');const heading=make('div','colhead');const title=make('h3','',state);const count=make('span','pill',String(data.items.filter(i=>i.status===state).length));heading.append(title,count);col.append(heading);
+   const col=make('section','column');const heading=make('div','colhead');const title=make('h3','',statusLabel(state));const count=make('span','pill',String(data.items.filter(i=>i.status===state).length));heading.append(title,count);col.append(heading);
    const list=make('div','cards');list.dataset.status=state;
    if(isAdmin){list.ondragover=e=>{e.preventDefault();list.classList.add('over');};list.ondragleave=()=>list.classList.remove('over');list.ondrop=e=>{e.preventDefault();list.classList.remove('over');const id=e.dataTransfer.getData('text/plain');if(id)update(id,state);};}
    const items=data.items.filter(i=>i.status===state);
@@ -35,7 +37,7 @@ async function load(){
     const date=new Date(item.created_at);meta.append(make('time','',isNaN(date)?'':date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})));card.append(meta);
     if(isAdmin){
      card.append(make('p','email',item.email||''));
-     const select=make('select','status');select.setAttribute('aria-label','Change feedback status');STATES.forEach(s=>{const op=make('option','',s);op.value=s;op.selected=s===item.status;select.append(op);});select.onchange=()=>update(item.id,select.value);card.append(select);
+     const select=make('select','status');select.setAttribute('aria-label','Change feedback status');STATES.forEach(s=>{const op=make('option','',statusLabel(s));op.value=s;op.selected=s===item.status;select.append(op);});select.onchange=()=>update(item.id,select.value);card.append(select);
     }
     list.append(card);
    });
