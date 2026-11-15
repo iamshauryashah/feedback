@@ -1,6 +1,6 @@
 # Shaurya's Websites — Feedback
 
-A shared feedback platform for every site under `*.shauryaswebsites.com`, served at `https://feedback.shauryaswebsites.com`.
+A shared feedback platform for sites under `*.shauryaswebsites.com` and `*.shauryaswebsite.com`, served at `https://feedback.shauryaswebsites.com`.
 
 ## Features
 
@@ -52,7 +52,7 @@ Visit `https://feedback.shauryaswebsites.com` and select **Admin sign in**. Once
 ## Security and operations
 
 - The public board's address is an open secret, not an authorization boundary.
-- The Worker validates the request's Origin for cross-site submissions. Only the domain `shauryaswebsites.com` and its subdomains are accepted, plus localhost in local development.
+- The Worker validates the request's Origin for cross-site submissions. Both `shauryaswebsites.com` and `shauryaswebsite.com` (and their subdomains) are accepted, plus localhost in local development.
 - A single global Durable Object stores all sites' feedback, its Kanban statuses, and rate-limit records. This design is suitable for a lightweight shared platform. Large-scale usage may call for data partitioning and periodic cleanup.
 - Admin sessions are signed using `SESSION_SECRET`; changing either secret invalidates existing sessions.
 - Feedback is stored persistently. Email access is protected by server-side authentication, not by hiding the field in frontend JavaScript.
