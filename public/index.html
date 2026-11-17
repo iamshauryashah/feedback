@@ -3,14 +3,13 @@
 <meta name="theme-color" content="#f7f7fb"><title>Ideas & feedback · Shaurya's Websites</title>
 <link rel="stylesheet" href="/style.css"></head>
 <body><main class="shell">
-<header class="top"><a class="brand" href="/">✳ Shaurya's Websites <span>/ Feedback</span></a><button id="loginBtn" class="subtle">Admin sign in</button></header>
+<header class="top"><a class="brand" href="/">✳ Shaurya's Websites <span>/ Feedback</span></a></header>
 <section class="intro"><div class="eyebrow">THE COMMUNITY IDEA BOARD</div><h1>Good ideas start<br>with <em>you.</em></h1><p>Have an idea, noticed a bug, or want something to work differently? Every note helps us make these websites better.</p><button id="suggestBtn" class="primary">✦ Share Feedback</button></section>
 <section class="boardHeading"><div><h2>Community feedback</h2><p id="count">Loading ideas…</p></div><button id="refreshBtn" class="subtle">↻ Refresh</button></section>
 <div id="board" class="board" aria-live="polite"></div>
 <footer>Built with curiosity. Everyone can read the board; only the admin can organize it.</footer>
 </main>
 <dialog id="ideaDialog"><form id="ideaForm" class="modal"><button type="button" class="close" data-close="ideaDialog" aria-label="Close">×</button><span class="eyebrow">WE'RE LISTENING</span><h2>What’s on your mind?</h2><p>There are no bad ideas here. Tell us what you're thinking.</p><label for="message">Your idea</label><textarea id="message" maxlength="2000" minlength="3" required placeholder="I wish this website could…"></textarea><label for="email">Email</label><input id="email" type="email" maxlength="254" required placeholder="you@example.com"><input class="trap" name="website" tabindex="-1" autocomplete="off"><div id="ideaError" class="error" role="status"></div><button class="primary" type="submit">Send my idea →</button></form></dialog>
-<dialog id="loginDialog"><form id="loginForm" class="modal"><button type="button" class="close" data-close="loginDialog" aria-label="Close">×</button><span class="eyebrow">PRIVATE ADMIN ACCESS</span><h2>Welcome back</h2><p>Sign in to see emails and organize the board.</p><label for="passcode">Admin passcode</label><input id="passcode" type="password" required autocomplete="current-password"><div id="loginError" class="error" role="status"></div><button class="primary" type="submit">Sign in →</button></form></dialog>
 <script src="/app.js" defer></script><script defer src="https://navigation.shauryaswebsites.com/launcher.js"></script>
 <script defer src="https://auth.shauryaswebsites.com/widget.js"></script>
 </body></html>
