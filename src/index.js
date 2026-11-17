@@ -6,9 +6,6 @@ const json = (value,status=200,extra={}) => new Response(JSON.stringify(value),{
 const err = (message,status=400,extra={}) => json({error:message},status,extra);
 const bytes = async value => new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(value)));
 const hex = bytes => Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
-const safeEq = (a,b) => { if(a.length!==b.length)return false; let diff=0; for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0; };
-const b64 = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-const unb64 = value => Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-value.length%4)%4)),c=>c.charCodeAt(0));
 const TRUSTED_DOMAINS = ['shauryaswebsites.com', 'shauryaswebsite.com'];
 const hostAllowed = host => TRUSTED_DOMAINS.some(domain => host === domain || host.endsWith('.' + domain)) || host === 'localhost' || host === '127.0.0.1';
 function trustedOrigin(value, requestUrl) {
@@ -24,24 +21,20 @@ function trustedOrigin(value, requestUrl) {
   } catch { return null; }
 }
 function cors(origin) { return origin ? {'access-control-allow-origin':origin,'access-control-allow-methods':'GET, POST, PATCH, OPTIONS','access-control-allow-headers':'content-type','access-control-max-age':'3600','vary':'Origin'} : {}; }
-async function sign(data,secret) {
-  const key = await crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
-  return b64(new Uint8Array(await crypto.subtle.sign('HMAC',key,encoder.encode(data))));
-}
-async function admin(request,env) {
-  if(!env.SESSION_SECRET || !env.ADMIN_PASSCODE)return false;
-  const cookie = request.headers.get('cookie')||'';
-  const token = cookie.split(';').map(v=>v.trim()).find(v=>v.startsWith('feedback_session='))?.slice(17);
-  if(!token)return false;
-  const parts=token.split('.');
-  if(parts.length!==3)return false;
-  const [ts,nonce,mac]=parts;
-  if(!/^\d{10,13}$/.test(ts)|| !/^[a-zA-Z0-9_-]{16,64}$/.test(nonce))return false;
-  const age=Date.now()-Number(ts);
-  if(age<0||age>8*60*60*1000)return false;
-  const passHash=hex(await bytes(env.ADMIN_PASSCODE));
-  const expected=await sign(ts+'.'+nonce+'.'+passHash,env.SESSION_SECRET);
-  return safeEq(expected,mac);
+// Check the authoritative Better Auth session and server-owned admin role.
+// Use a Worker service binding; never trust an isAdmin value supplied by the browser.
+async function platformAdmin(request,env) {
+  if (!env.AUTH_SERVICE) throw new Error('Identity service binding is missing');
+  const cookie = request.headers.get('cookie') || '';
+  if (!cookie) return false;
+  const response = await env.AUTH_SERVICE.fetch(new Request('https://auth.shauryaswebsites.com/api/me', {
+    method: 'GET',
+    headers: { 'cookie': cookie, 'accept': 'application/json' },
+    redirect: 'manual'
+  }));
+  if (!response.ok) throw new Error('Identity service unavailable');
+  const profile = await response.json();
+  return profile?.isAdmin === true && profile?.userType === 'admin';
 }
 function sameOrigin(request) {
   const origin=request.headers.get('origin');
@@ -72,7 +65,9 @@ async function api(request,env,url) {
   if(request.method==='OPTIONS')return origin ? new Response(null,{status:204,headers:ch}) : err('Origin not allowed',403);
   if(!env.FEEDBACK_STORE)return err('Feedback store not configured',503,ch);
   if(path==='/api/feedback' && request.method==='GET') {
-    const isAdmin=await admin(request,env);
+    let isAdmin = false;
+    try { isAdmin = await platformAdmin(request,env); }
+    catch (e) { console.warn('Identity lookup unavailable: showing public board',e.message); }
     const rows=await store(env,'list',{admin:isAdmin});
     return json({items:rows.items,admin:isAdmin},200,ch);
   }
@@ -93,28 +88,14 @@ async function api(request,env,url) {
     await store(env,'submit',{id,message,email,site,now});
     return json({ok:true,id},201,ch);
   }
-  if(path==='/api/admin/login' && request.method==='POST') {
-    if(!sameOrigin(request))return err('Forbidden',403);
-    if(!env.ADMIN_PASSCODE||!env.SESSION_SECRET)return err('Admin secrets not configured',503);
-    if(!(request.headers.get('content-type')||'').startsWith('application/json'))return err('Expected JSON',415);
-    const throttle=await checkThrottle(env,ip(request),'login');
-    if(!throttle.allowed)return err('Too many attempts. Try later.',429,{'retry-after':String(throttle.retryAfter)});
-    let body;try{body=await request.json();}catch{return err('Invalid JSON');}
-    const proposed=typeof body?.passcode==='string'?body.passcode:'';
-    if(proposed.length>1024)return err('Invalid passcode',401);
-    const a=hex(await bytes(proposed)),b=hex(await bytes(env.ADMIN_PASSCODE));
-    if(!safeEq(a,b))return err('Incorrect passcode',401);
-    const ts=String(Date.now()),nonce=b64(crypto.getRandomValues(new Uint8Array(24)));
-    const mac=await sign(ts+'.'+nonce+'.'+b,env.SESSION_SECRET);
-    return json({ok:true},200,{'set-cookie':`feedback_session=${ts}.${nonce}.${mac}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800`});
-  }
-  if(path==='/api/admin/logout' && request.method==='POST') {
-    if(!sameOrigin(request))return err('Forbidden',403);
-    return json({ok:true},200,{'set-cookie':'feedback_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});
-  }
   const match=path.match(/^\/api\/feedback\/([0-9a-f-]{36})$/);
   if(match&&request.method==='PATCH') {
-    if(!sameOrigin(request)||!await admin(request,env))return err('Unauthorized',401);
+    if(!sameOrigin(request))return err('Forbidden',403);
+    if(!env.AUTH_SERVICE)return err('Identity service unavailable',503);
+    let isAdmin;
+    try { isAdmin=await platformAdmin(request,env); }
+    catch { return err('Identity service unavailable',503); }
+    if(!isAdmin)return err('Administrator access required',403);
     if(!(request.headers.get('content-type')||'').startsWith('application/json'))return err('Expected JSON',415);
     let body;try{body=await request.json();}catch{return err('Invalid JSON');}
     if(!STATES.includes(body?.status))return err('Invalid status');
