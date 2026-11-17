@@ -32,5 +32,11 @@
         "FeedbackStore"
       ]
     }
+  ],
+  "services": [
+    {
+      "binding": "AUTH_SERVICE",
+      "service": "user-management"
+    }
   ]
 }
