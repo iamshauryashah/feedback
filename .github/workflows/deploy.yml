@@ -9,7 +9,6 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      ADMIN_PASSCODE: ${{ secrets.ADMIN_PASSCODE }}
       SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +19,7 @@ jobs:
       - name: Check secrets are configured
         shell: bash
         run: |
-          for variable in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID ADMIN_PASSCODE SESSION_SECRET; do
+          for variable in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID SESSION_SECRET; do
             if [ -z "${!variable}" ]; then
               echo "::error::Missing configuration: $variable"
               exit 1
@@ -32,10 +31,9 @@ jobs:
           fi
       - name: Deploy Worker, assets and Durable Object migration
         run: npx wrangler deploy
-      - name: Install admin secrets
+      - name: Install rate-limit hashing secret
         shell: bash
         run: |
-          printf '%s' "$ADMIN_PASSCODE" | npx wrangler secret put ADMIN_PASSCODE
           printf '%s' "$SESSION_SECRET" | npx wrangler secret put SESSION_SECRET
       - name: Verify live widget
         run: curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors https://feedback.shauryaswebsites.com/widget.js >/dev/null
