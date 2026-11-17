@@ -9,19 +9,14 @@ function openDialog(id){$(id).showModal();}
 document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>$(b.dataset.close).close()));
 $('suggestBtn').onclick=()=>openDialog('ideaDialog');
 $('refreshBtn').onclick=()=>load();
-$('loginBtn').onclick=async()=>{if(isAdmin){await request('/api/admin/logout',{method:'POST'});await load();}else openDialog('loginDialog');};
 $('ideaForm').onsubmit=async e=>{
  e.preventDefault(); const btn=e.target.querySelector('[type=submit]');btn.disabled=true;$('ideaError').textContent='';
  try{await request('/api/feedback',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:$('message').value,email:$('email').value,website:e.target.elements.website.value})});$('ideaForm').reset();$('ideaDialog').close();await load();}catch(err){$('ideaError').textContent=err.message;}finally{btn.disabled=false;}
 };
-$('loginForm').onsubmit=async e=>{
- e.preventDefault();const btn=e.target.querySelector('[type=submit]');btn.disabled=true;$('loginError').textContent='';
- try{await request('/api/admin/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({passcode:$('passcode').value})});$('passcode').value='';$('loginDialog').close();await load();}catch(err){$('loginError').textContent=err.message;}finally{btn.disabled=false;}
-};
 async function update(id,status){try{await request('/api/feedback/'+encodeURIComponent(id),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status})});await load();}catch(e){alert(e.message);await load();}}
 async function load(){
  try{
-  const data=await request('/api/feedback');isAdmin=data.admin;$('loginBtn').textContent=isAdmin?'Admin · Sign out':'Admin sign in';
+  const data=await request('/api/feedback');isAdmin=data.admin === true;
   $('count').textContent=data.items.length+' idea'+(data.items.length===1?'':'s')+' shared';
   const board=$('board');board.replaceChildren();
   STATES.forEach((state,index)=>{
@@ -46,4 +41,6 @@ async function load(){
   });
  }catch(e){$('count').textContent='Could not load the board: '+e.message;}
 }
+window.addEventListener('shaurya:auth-changed',()=>load());
+window.addEventListener('focus',()=>load());
 load();
