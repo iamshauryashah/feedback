@@ -54,6 +54,25 @@ export class FeedbackStore {
       return Response.json({ items, total });
     }
 
+    // Read-only, email-free status filtering for the shared MCP integration.
+    if (url.pathname === '/list-filtered') {
+      const { offset, limit, status = 'all' } = body;
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000 ||
+          !Number.isSafeInteger(limit) || limit < 1 || limit > 200 ||
+          (status !== 'all' && !STATUSES.includes(status))) {
+        return Response.json({ error: 'Invalid feedback query' }, { status: 400 });
+      }
+      const all = status === 'all';
+      const total = all
+        ? this.sql.exec('SELECT count(*) AS n FROM feedback').toArray()[0].n
+        : this.sql.exec('SELECT count(*) AS n FROM feedback WHERE status=?', status).toArray()[0].n;
+      const fields = 'id,message,site,status,created_at,updated_at';
+      const items = all
+        ? this.sql.exec(`SELECT ${fields} FROM feedback ORDER BY created_at ASC,id ASC LIMIT ? OFFSET ?`, limit, offset).toArray()
+        : this.sql.exec(`SELECT ${fields} FROM feedback WHERE status=? ORDER BY created_at ASC,id ASC LIMIT ? OFFSET ?`, status, limit, offset).toArray();
+      return Response.json({ items, total });
+    }
+
     if (url.pathname === '/throttle') {
       const { key, now } = body;
       if (typeof key !== 'string' || !Number.isSafeInteger(now)) return Response.json({ error: 'Invalid throttle request' }, { status: 400 });
