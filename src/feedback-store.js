@@ -39,6 +39,21 @@ export class FeedbackStore {
       return Response.json({ items });
     }
 
+    // Read-only, email-free pagination for the platform's MCP triage integration.
+    if (url.pathname === '/list-new') {
+      const offset = body.offset, limit = body.limit;
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000 ||
+          !Number.isSafeInteger(limit) || limit < 1 || limit > 200) {
+        return Response.json({ error: 'Invalid pagination' }, { status: 400 });
+      }
+      const total = this.sql.exec("SELECT count(*) AS n FROM feedback WHERE status = 'Inbox'").toArray()[0].n;
+      const items = this.sql.exec(
+        "SELECT id,message,site,status,created_at,updated_at FROM feedback WHERE status = 'Inbox' ORDER BY created_at ASC,id ASC LIMIT ? OFFSET ?",
+        limit, offset
+      ).toArray();
+      return Response.json({ items, total });
+    }
+
     if (url.pathname === '/throttle') {
       const { key, now } = body;
       if (typeof key !== 'string' || !Number.isSafeInteger(now)) return Response.json({ error: 'Invalid throttle request' }, { status: 400 });
